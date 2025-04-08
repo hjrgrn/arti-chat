@@ -1,5 +1,6 @@
-use std::env;
+use std::{env, process::exit};
 
+use arti_client::{config::TorClientConfigBuilder, TorClient, TorClientConfig};
 use lib::{
     server_lib::{
         self, administration::server_commands_wrapper, settings::get_settings,
@@ -27,6 +28,24 @@ pub async fn main() {
             return;
         }
     };
+
+    let tor_config =
+        TorClientConfigBuilder::from_directories(settings.state_dir(), settings.cache_dir())
+            .build()
+            .expect("Failed to build TorClientConfig");
+    let tor_client = TorClient::create_bootstrapped(tor_config)
+        .await
+        .expect("Failed to create TorClient");
+    match tor_client.connect(("torproject.org", 80)).await {
+        Ok(_) => {
+            println!("Connection Established");
+        }
+        Err(e) => {
+            eprintln!("Failed to connect: {}", e);
+        }
+    }
+
+    exit(19);
 
     // Cancellation token for graceful shutdown
     let ctoken = CancellationToken::new();
