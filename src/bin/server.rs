@@ -1,5 +1,6 @@
-use std::env;
+use std::{env, process::exit};
 
+use arti_client::{config::TorClientConfigBuilder, TorClientConfig};
 use lib::{
     server_lib::{
         self, administration::server_commands_wrapper, settings::get_settings,
@@ -27,6 +28,12 @@ pub async fn main() {
             return;
         }
     };
+
+    let tor_config =
+        TorClientConfigBuilder::from_directories(settings.state_dir(), settings.cache_dir())
+            .build();
+    println!("tor_config: {:?}", tor_config);
+    exit(19);
 
     // Cancellation token for graceful shutdown
     let ctoken = CancellationToken::new();
