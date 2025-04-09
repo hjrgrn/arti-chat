@@ -1,13 +1,9 @@
 use std::{env, process::exit};
 
-use arti_client::{
-    config::{onion_service::OnionServiceConfigBuilder, TorClientConfigBuilder},
-    TorClient, TorClientConfig,
-};
 use lib::{
     server_lib::{
         self, administration::server_commands_wrapper, settings::get_settings,
-        ConnHandlerIdRecordMsg,
+        tor_facility::launch_service, ConnHandlerIdRecordMsg,
     },
     shared_lib::{display_output, graceful_shutdown::handling_sigint, OutputMsg, StdinRequest},
     telemetry::{get_subscriber, init_subscriber},
@@ -32,32 +28,13 @@ pub async fn main() {
         }
     };
 
-    let tor_config =
-        TorClientConfigBuilder::from_directories(settings.state_dir(), settings.cache_dir())
-            .build()
-            .expect("Failed to build TorClientConfig");
-    let tor_client = TorClient::create_bootstrapped(tor_config)
-        .await
-        .expect("Failed to create TorClient");
-
-    let svc_config = OnionServiceConfigBuilder::default()
-        .nickname(
-            "arti-chat-server"
-                .parse()
-                .expect("Failed to parse server nickname, this should not happen"),
-        )
-        .build()
-        .expect("Failed to build onion service config");
-
-    let (service, request_stream) = tor_client
-        .launch_onion_service(svc_config)
-        .expect("Failed to launch onion service");
-    println!(
-        "Address: {}",
-        service
-            .onion_address()
-            .expect("Failed to identify onion address of the service")
-    );
+    let request_stream = match launch_service(&settings).await {
+        Ok(rs) => rs,
+        Err(e) => {
+            tracing::error!("Failed to instanciate Tor facility:\n{:?}", e);
+            return;
+        }
+    };
 
     exit(19);
 
