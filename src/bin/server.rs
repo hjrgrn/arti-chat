@@ -1,10 +1,9 @@
 use std::{env, process::exit};
 
-use arti_client::{config::TorClientConfigBuilder, TorClient, TorClientConfig};
 use lib::{
     server_lib::{
         self, administration::server_commands_wrapper, settings::get_settings,
-        ConnHandlerIdRecordMsg,
+        tor_facility::launch_service, ConnHandlerIdRecordMsg,
     },
     shared_lib::{display_output, graceful_shutdown::handling_sigint, OutputMsg, StdinRequest},
     telemetry::{get_subscriber, init_subscriber},
@@ -29,21 +28,13 @@ pub async fn main() {
         }
     };
 
-    let tor_config =
-        TorClientConfigBuilder::from_directories(settings.state_dir(), settings.cache_dir())
-            .build()
-            .expect("Failed to build TorClientConfig");
-    let tor_client = TorClient::create_bootstrapped(tor_config)
-        .await
-        .expect("Failed to create TorClient");
-    match tor_client.connect(("torproject.org", 80)).await {
-        Ok(_) => {
-            println!("Connection Established");
-        }
+    let request_stream = match launch_service(&settings).await {
+        Ok(rs) => rs,
         Err(e) => {
-            eprintln!("Failed to connect: {}", e);
+            tracing::error!("Failed to instanciate Tor facility:\n{:?}", e);
+            return;
         }
-    }
+    };
 
     exit(19);
 

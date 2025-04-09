@@ -17,6 +17,7 @@ mod connection_handling;
 mod id_record;
 pub mod settings;
 mod structs;
+pub mod tor_facility;
 
 /// # `run`'s wrapper
 ///
