@@ -2,16 +2,15 @@
 //!
 //! Set of functions relative to the handling of the incoming connections
 
+use arti_client::DataStream;
 use auxiliaries::{ReadBranchError, WriteBranchError};
 use secrecy::SecretString;
-use std::net::SocketAddr;
 use tokio::io::{BufReader, BufWriter};
-use tokio::net::TcpStream;
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use crate::server_lib::connection_handling::auxiliaries::{read_branch, write_branch};
-use crate::server_lib::structs::CommandFromIdRecord;
+use crate::server_lib::structs::{CommandFromIdRecord, MASTER};
 use crate::shared_lib::socket_handling::{RecvHandler, WriteHandler};
 
 use self::auxiliaries::handshake_wrapper;
@@ -24,12 +23,11 @@ mod handshaking;
 
 /// `connection_handler`'s wrapper
 pub async fn connection_handler_wrapper(
-    stream: TcpStream,
-    addr: SocketAddr,
-    int_com_tx: broadcast::Sender<Message>, // internal communication
-    int_com_rx: broadcast::Receiver<Message>, // internal communication
+    stream: DataStream,                          // TODO:
+    int_com_tx: broadcast::Sender<Message>,      // internal communication
+    int_com_rx: broadcast::Receiver<Message>,    // internal communication
     id_tx: mpsc::Sender<ConnHandlerIdRecordMsg>, // sending to id record
-    output_tx: mpsc::Sender<OutputMsg>,     // Output channel
+    output_tx: mpsc::Sender<OutputMsg>,          // Output channel
     ctoken: CancellationToken,
     shared_secret: SecretString, // Secret needed for authenticate the users during handshake.
 ) {
@@ -37,7 +35,6 @@ pub async fn connection_handler_wrapper(
         _ = ctoken.cancelled() => {}
         res = connection_handler(
                 stream,
-                addr,
                 int_com_tx,
                 int_com_rx,
                 id_tx,
@@ -72,20 +69,18 @@ pub async fn connection_handler_wrapper(
 /// - `shared_secret` -> Secret needed for authenticate the users during handshake.
 #[tracing::instrument(
     name = "Handling connection.",
-    skip(stream, addr, int_com_tx, int_com_rx, id_tx, output_tx, shared_secret),
+    skip(stream, int_com_tx, int_com_rx, id_tx, output_tx, shared_secret),
     fields(
         username = tracing::field::Empty,
-        address = %addr
     )
 )]
 async fn connection_handler(
-    mut stream: TcpStream,
-    addr: SocketAddr,
+    stream: DataStream, // TODO:
     int_com_tx: broadcast::Sender<Message>,
     mut int_com_rx: broadcast::Receiver<Message>,
     id_tx: mpsc::Sender<ConnHandlerIdRecordMsg>,
     output_tx: mpsc::Sender<OutputMsg>,
-    shared_secret: SecretString
+    shared_secret: SecretString,
 ) -> Result<(), anyhow::Error> {
     // buffers
     let mut line = String::new();
@@ -103,9 +98,8 @@ async fn connection_handler(
         &mut write_handler,
         &mut read_handler,
         &id_tx,
-        &addr,
         &output_tx,
-        shared_secret
+        shared_secret,
     )
     .await
     {
@@ -117,11 +111,7 @@ async fn connection_handler(
         }
         Err(e) => match e {
             handshaking::HandshakeError::NonFatal(e) => {
-                tracing::info!(
-                    "Failed to complete handshake with:\naddr: {}\nBecouse of:\n{}",
-                    addr,
-                    e
-                );
+                tracing::info!("Failed to complete handshake with becouse of:\n{}", e);
                 return Ok(());
             }
             handshaking::HandshakeError::Fatal(e) => {
@@ -138,7 +128,7 @@ async fn connection_handler(
                     Some(command) => {
                         match command {
                             CommandFromIdRecord::Kick => {
-                                let msg = ConnHandlerIdRecordMsg::ClientLeft(addr.clone());
+                                let msg = ConnHandlerIdRecordMsg::ClientLeft(nick.clone());
                                 match id_tx.send(msg).await{
                                     Ok(_) => {}
                                     Err(e) => {
@@ -146,10 +136,10 @@ async fn connection_handler(
                                         return Err(e.into());
                                     }
                                 };
-                                let content = String::from("Master: You have been kicked.\n");
+                                let content = format!("{}: You have been kicked.\n", MASTER);
                                 let personal = Message::Personal {
                                     content,
-                                    address: addr.clone()
+                                    nickname: nick.clone()
                                 };
                                 match int_com_tx.send(personal) {
                                     Ok(_) => {}
@@ -173,7 +163,6 @@ async fn connection_handler(
                     bytes,
                     &mut line,
                     &id_tx,
-                    &addr,
                     &mut id_hand_rx,
                     &int_com_tx,
                     &nick,
@@ -187,8 +176,7 @@ async fn connection_handler(
                             }
                             ReadBranchError::NonFatal(e) => {
                                 tracing::info!(
-                                    "Connection with:\naddr: {}\nuser: {}\nClosed becouse of:\n{}",
-                                    addr,
+                                    "Connection with user: {}\nClosed becouse of:\n{}",
                                     nick,
                                     e
                                 );
@@ -201,7 +189,7 @@ async fn connection_handler(
 
             // sends content to the client
             res = int_com_rx.recv() => {
-                match write_branch(res, &addr, &mut write_handler, &id_tx, output_tx.clone()).await {
+                match write_branch(res, &nick, &mut write_handler, &id_tx, output_tx.clone()).await {
                     Ok(_) => {}
                     Err(e) => {
                         match e {
@@ -210,8 +198,7 @@ async fn connection_handler(
                             }
                             WriteBranchError::NonFatal(e) => {
                                 tracing::info!(
-                                    "Connection with:\naddr: {}\nuser: {}\nClosed becouse of:\n{}",
-                                    addr,
+                                    "Connection with user: {}\nClosed becouse of:\n{}",
                                     nick,
                                     e
                                 );

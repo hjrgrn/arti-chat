@@ -1,4 +1,4 @@
-use std::{env, process::exit};
+use std::env;
 
 use lib::{
     server_lib::{
@@ -28,7 +28,7 @@ pub async fn main() {
         }
     };
 
-    let request_stream = match launch_service(&settings).await {
+    let rend_request_stream = match launch_service(&settings).await {
         Ok(rs) => rs,
         Err(e) => {
             tracing::error!("Failed to instanciate Tor facility:\n{:?}", e);
@@ -36,7 +36,7 @@ pub async fn main() {
         }
     };
 
-    exit(19);
+    let stream_requests = tor_hsservice::handle_rend_requests(rend_request_stream);
 
     // Cancellation token for graceful shutdown
     let ctoken = CancellationToken::new();
@@ -66,6 +66,7 @@ pub async fn main() {
         stdin_req_tx,
         ctoken,
         shared_secret,
+        stream_requests,
     )
     .await
 }

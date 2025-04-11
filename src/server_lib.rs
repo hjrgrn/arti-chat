@@ -1,10 +1,14 @@
 use std::net::SocketAddr;
 
 use connection_handling::connection_handler_wrapper;
+use futures::Stream;
+use futures::StreamExt;
 use secrecy::SecretString;
-use tokio::net::TcpListener;
+use structs::MASTER;
 use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
+use tor_cell::relaycell::msg::Connected;
+use tor_hsservice::StreamRequest;
 
 use crate::server_lib::{settings::Settings, structs::Message};
 use crate::shared_lib::{OutputMsg, StdinRequest};
@@ -34,6 +38,7 @@ pub mod tor_facility;
 /// - `stdin_req_tx` -> channel used to request information from stdin through `StdinRequest`.
 /// - `ctoken` -> Cancellation token used to communicate the shutdown
 /// - `shared_secret` -> Secret needed for authenticate the users during handshake.
+/// - `stream_requests` -> TODO:
 pub async fn run_wrapper(
     settings: Settings,
     con_hand_id_tx: mpsc::Sender<ConnHandlerIdRecordMsg>,
@@ -42,6 +47,7 @@ pub async fn run_wrapper(
     stdin_req_tx: mpsc::Sender<StdinRequest>,
     ctoken: CancellationToken,
     shared_secret: SecretString,
+    stream_requests: impl Stream<Item = StreamRequest>,
 ) {
     tokio::select! {
         _ = ctoken.cancelled() => {}
@@ -53,6 +59,7 @@ pub async fn run_wrapper(
             stdin_req_tx,
             ctoken.clone(),
             shared_secret,
+            stream_requests
         ) => {
             match res {
                 Ok(()) => {},
@@ -84,9 +91,17 @@ pub async fn run_wrapper(
 /// - `stdin_req_tx` -> channel used to request information from stdin through `StdinRequest`.
 /// - `ctoken` -> Cancellation token used to communicate the shutdown
 /// - `shared_secret` -> Secret needed for authenticate the users during handshake.
+/// - `stream_requests` -> TODO:
 #[tracing::instrument(
     name = "Server is running",
-    skip(settings, con_hand_id_tx, con_hand_id_rx, output_tx, shared_secret)
+    skip(
+        settings,
+        con_hand_id_tx,
+        con_hand_id_rx,
+        output_tx,
+        shared_secret,
+        stream_requests
+    )
 )]
 async fn run(
     settings: Settings,
@@ -96,15 +111,10 @@ async fn run(
     stdin_req_tx: mpsc::Sender<StdinRequest>,
     ctoken: CancellationToken,
     shared_secret: SecretString,
+    stream_requests: impl Stream<Item = StreamRequest>,
 ) -> Result<(), anyhow::Error> {
+    // TODO: message
     output_tx.send(OutputMsg::new("Listening...")).await?;
-    let listener = match TcpListener::bind(&settings.get_full_address()).await {
-        Ok(l) => l,
-        Err(e) => {
-            let _ = output_tx.send(OutputMsg::new_error(e.to_string())).await;
-            return Err(e.into());
-        }
-    };
 
     // IdRecord
     // channels
@@ -133,20 +143,25 @@ async fn run(
         con_hand_id_rx,
         id_msg_tx1,
         output_tx.clone(),
-        addr,
+        MASTER,
         stdin_req_tx.clone(),
         ctoken.clone(),
     ));
 
-    loop {
+    // TODO:
+    tokio::pin!(stream_requests);
+
+    while let Some(request) = stream_requests.next().await {
+        // TODO: check port with request.request()
+
         // internal communication between `connection_handler`s subfunctions
         let int_com_tx1 = int_com_tx.clone();
         let int_com_rx = int_com_tx.subscribe();
         // communication with id_record
         let con_hand_id_tx1 = con_hand_id_tx.clone();
 
-        let (stream, addr) = match listener.accept().await {
-            Ok((s, a)) => (s, a),
+        let stream = match request.accept(Connected::new_empty()).await {
+            Ok(s) => s,
             Err(e) => {
                 tracing::info!("Error receiving a request:\n{:?}", e);
                 continue;
@@ -173,13 +188,12 @@ async fn run(
             IdRecordRunMsg::IsThereSpace(true) => {
                 tokio::spawn(connection_handler_wrapper(
                     stream,
-                    addr,
                     int_com_tx1,
                     int_com_rx,
                     con_hand_id_tx1,
                     output_tx.clone(),
                     ctoken.clone(),
-                    shared_secret.clone()
+                    shared_secret.clone(),
                 ));
             }
             IdRecordRunMsg::IsThereSpace(false) => {
@@ -190,4 +204,5 @@ async fn run(
             }
         }
     }
+    Ok(())
 }

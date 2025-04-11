@@ -11,6 +11,7 @@ use crate::server_lib::structs::CommandFromIdRecord;
 use crate::server_lib::OutputMsg;
 use crate::shared_lib::auxiliaries::error_chain_fmt;
 use crate::shared_lib::socket_handling::{RecvHandler, RecvHandlerError, WriteHandler};
+use arti_client::{DataReader, DataWriter};
 use core::str;
 use hmac::{Hmac, Mac};
 use rand::distributions::Alphanumeric;
@@ -23,9 +24,7 @@ use secrecy::{ExposeSecret, SecretString};
 use sha2::Sha256;
 use std::char;
 use std::fmt::Debug;
-use std::net::SocketAddr;
 use tokio::io::{BufReader, BufWriter};
-use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::sync::mpsc;
 
 use super::super::structs::{Client, ConnHandlerIdRecordMsg, IdRecordConnHandler};
@@ -57,9 +56,8 @@ use super::super::structs::{Client, ConnHandlerIdRecordMsg, IdRecordConnHandler}
 /// client name, channel for receiving messages from `id_record` and channle
 /// for receiving commands from `id_record`
 pub async fn handshake(
-    write_handler: &mut WriteHandler<BufWriter<WriteHalf<'_>>>,
-    read_handler: &mut RecvHandler<BufReader<ReadHalf<'_>>>,
-    addr: SocketAddr,
+    write_handler: &mut WriteHandler<BufWriter<DataWriter>>,
+    read_handler: &mut RecvHandler<BufReader<DataReader>>,
     int_com_tx: &mpsc::Sender<ConnHandlerIdRecordMsg>,
     output_tx: &mpsc::Sender<OutputMsg>,
     shared_secret: SecretString,
@@ -109,8 +107,7 @@ pub async fn handshake(
                     continue;
                 } else {
                     (command_tx, command_rx) = mpsc::channel::<CommandFromIdRecord>(10);
-                    let new_client =
-                        Client::new(nick.clone(), addr.clone(), req_tx.clone(), command_tx);
+                    let new_client = Client::new(nick.clone(), req_tx.clone(), command_tx);
                     let req = ConnHandlerIdRecordMsg::AcceptanceRequest(new_client);
                     int_com_tx
                         .send(req)
@@ -131,7 +128,7 @@ pub async fn handshake(
                                     .write_str(CONNECTION_ACCEPTED)
                                     .await
                                     .map_err(|e| HandshakeError::NonFatal(e.into()))?;
-                                let p = format!("{} has been accepted as {}\n", addr, nick);
+                                let p = format!("{} has been accepted\n", nick);
                                 output_tx
                                     .send(OutputMsg::new(&p))
                                     .await
@@ -179,8 +176,8 @@ pub async fn handshake(
 /// This function may return an error that can be fatal, in this case the
 /// application needs to shutdown.
 async fn key_exchange(
-    write_handler: &mut WriteHandler<BufWriter<WriteHalf<'_>>>,
-    read_handler: &mut RecvHandler<BufReader<ReadHalf<'_>>>,
+    write_handler: &mut WriteHandler<BufWriter<DataWriter>>,
+    read_handler: &mut RecvHandler<BufReader<DataReader>>,
     shared_secret: SecretString,
 ) -> Result<(), HandshakeError> {
     let mut hmac = Hmac::<Sha256>::new_from_slice(shared_secret.expose_secret().as_bytes())

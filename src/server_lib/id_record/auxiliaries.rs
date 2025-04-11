@@ -1,7 +1,6 @@
-/// # auxiliaries
-///
-/// Internal functions used by the function `id_record`
-use std::net::SocketAddr;
+//! # auxiliaries
+//!
+//! Internal functions used by the function `id_record`
 
 use tokio::sync::{
     broadcast,
@@ -12,7 +11,7 @@ use tokio::sync::{
 use crate::{
     globals::{KICK, SERVER_COM, SERVER_LIST},
     server_lib::{
-        structs::{CommandFromIdRecord, IdRecordConnHandler},
+        structs::{CommandFromIdRecord, IdRecordConnHandler, MASTER},
         OutputMsg, StdinRequest,
     },
 };
@@ -84,7 +83,6 @@ pub fn print_list(clients: &Vec<Client>) -> String {
 ///
 /// - `msg`: Message received from the `connection_handler`
 /// - `clients`: The clients connected
-/// - `address`: Address of the app
 /// - `con_hand_tx`: Sends to `connection_handler`
 /// - `output_tx`: Sends to the output displayer
 /// - `stdin_req_tx`: Sends requests for stdin handler
@@ -92,27 +90,24 @@ pub fn print_list(clients: &Vec<Client>) -> String {
 pub async fn receiving_from_hand(
     msg: ConnHandlerIdRecordMsg,
     clients: &mut Vec<Client>,
-    address: &SocketAddr,
+    nickname: &str,
     con_hand_tx: &broadcast::Sender<Message>,
     output_tx: &mpsc::Sender<OutputMsg>,
     stdin_req_tx: &mpsc::Sender<StdinRequest>,
 ) -> Result<(), anyhow::Error> {
     match msg {
         // remove the record from `clients`
-        ConnHandlerIdRecordMsg::ClientLeft(addr) => {
+        ConnHandlerIdRecordMsg::ClientLeft(nickname) => {
             for i in 0..clients.len() {
-                if clients[i].addr == addr {
+                if clients[i].nick == nickname {
                     output_tx
                         .send(OutputMsg::new(&format!(
-                            "{} {} has left the chat.\n",
-                            clients[i].nick, clients[i].addr
+                            "{} has left the chat.\n",
+                            clients[i].nick,
                         )))
                         .await?;
-                    let content = format!("Master: {} has left the chat.\n", clients[i].nick);
-                    con_hand_tx.send(Message::Broadcast {
-                        content,
-                        address: addr,
-                    })?;
+                    let content = format!("{}: {} has left the chat.\n", MASTER, clients[i].nick);
+                    con_hand_tx.send(Message::Broadcast { content, nickname })?;
                     clients.remove(i);
                     break;
                 }
@@ -122,11 +117,7 @@ pub async fn receiving_from_hand(
         ConnHandlerIdRecordMsg::AcceptanceRequest(new_client) => {
             let mut accepted = true;
             for client in clients.iter() {
-                if new_client.nick == client.nick {
-                    accepted = false;
-                    break;
-                }
-                if new_client.addr == client.addr {
+                if new_client.nick == client.nick || new_client.nick == MASTER {
                     accepted = false;
                     break;
                 }
@@ -141,11 +132,11 @@ pub async fn receiving_from_hand(
             }
         }
         // a client has requested a list clients
-        ConnHandlerIdRecordMsg::List(addr) => {
+        ConnHandlerIdRecordMsg::List(nickname) => {
             let content = print_list(&clients);
             let msg = IdRecordConnHandler::List(content);
             for client in clients.iter() {
-                if client.addr == addr {
+                if client.nick == nickname {
                     client.channel.send(msg).await?;
                     break;
                 }
@@ -156,7 +147,7 @@ pub async fn receiving_from_hand(
             parse_command(
                 &msg,
                 clients,
-                &address,
+                nickname,
                 con_hand_tx,
                 &output_tx,
                 &stdin_req_tx,
@@ -177,7 +168,7 @@ pub async fn receiving_from_hand(
 ///
 /// `msg`: message to be parsed
 /// `clients`: list of the connected clients
-/// `address`: address of the app
+/// `nickname`: TODO:
 /// `con_hand_tx`: channel used to send messages to `connection_handler`
 /// `output_tx`: channel used for sending somethign to be displayed to the displayer
 /// `stdin_req_tx`: channel used to request input from stdin
@@ -185,7 +176,7 @@ pub async fn receiving_from_hand(
 async fn parse_command(
     msg: &String,
     clients: &mut Vec<Client>,
-    address: &SocketAddr,
+    nickname: &str,
     con_hand_tx: &broadcast::Sender<Message>,
     output_tx: &mpsc::Sender<OutputMsg>,
     stdin_req_tx: &mpsc::Sender<StdinRequest>,
@@ -212,7 +203,7 @@ async fn parse_command(
         let content = format!("master: {}", msg);
         let m = Message::Broadcast {
             content,
-            address: address.clone(),
+            nickname: nickname.into(),
         };
         con_hand_tx.send(m)?;
     }
