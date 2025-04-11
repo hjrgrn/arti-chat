@@ -1,7 +1,6 @@
 //! # id_record
 //!
 //! Functions relative to handling the record that keeps track of the clients connected.
-use std::net::SocketAddr;
 
 use tokio::sync::{
     broadcast,
@@ -64,7 +63,7 @@ pub async fn id_record(
     mut con_hand_rx: Receiver<ConnHandlerIdRecordMsg>,
     con_hand_tx: broadcast::Sender<Message>,
     output_tx: mpsc::Sender<OutputMsg>,
-    address: SocketAddr,
+    nickname: &str,
     stdin_req_tx: mpsc::Sender<StdinRequest>,
     ctoken: CancellationToken,
 ) {
@@ -103,7 +102,7 @@ pub async fn id_record(
                         break;
                     }
                 };
-                match receiving_from_hand(msg, &mut clients, &address, &con_hand_tx, &output_tx, &stdin_req_tx).await {
+                match receiving_from_hand(msg, &mut clients, nickname, &con_hand_tx, &output_tx, &stdin_req_tx).await {
                     Ok(()) => {}
                     Err(e) => {
                         let _ = output_tx.send(OutputMsg::new_error(e.to_string())).await;

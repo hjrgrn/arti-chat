@@ -2,8 +2,9 @@
 //!
 //! Structs relatives to the server library.
 
-use std::net::SocketAddr;
 use tokio::sync::mpsc;
+
+pub static MASTER: &'static str = "Master";
 
 /// # `RunIdRecordMsg`
 ///
@@ -25,9 +26,10 @@ pub enum IdRecordRunMsg {
 /// `crate::server_lib::id_record::id_record`
 #[derive(Debug)]
 pub enum ConnHandlerIdRecordMsg {
-    ClientLeft(SocketAddr),
+    // TODO: create the domai Nickname
+    ClientLeft(String),
     AcceptanceRequest(Client),
-    List(SocketAddr),
+    List(String),
     ServerCommand(String),
 }
 
@@ -45,20 +47,19 @@ pub enum IdRecordConnHandler {
 #[derive(Debug)]
 pub struct Client {
     pub nick: String,
-    pub addr: SocketAddr,
+    // TODO: find an alternative to addr
+    // pub addr: SocketAddr,
     pub channel: mpsc::Sender<IdRecordConnHandler>,
     pub command: mpsc::Sender<CommandFromIdRecord>,
 }
 impl Client {
     pub fn new(
         nick: String,
-        addr: SocketAddr,
         channel: mpsc::Sender<IdRecordConnHandler>,
         command: mpsc::Sender<CommandFromIdRecord>,
     ) -> Self {
         Self {
             nick,
-            addr,
             channel,
             command,
         }
@@ -73,12 +74,6 @@ pub enum CommandFromIdRecord {
 /// TODO: Description
 #[derive(Debug, Clone)]
 pub enum Message {
-    Personal {
-        content: String,
-        address: SocketAddr,
-    },
-    Broadcast {
-        content: String,
-        address: SocketAddr,
-    },
+    Personal { content: String, nickname: String },
+    Broadcast { content: String, nickname: String },
 }

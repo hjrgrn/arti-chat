@@ -4,12 +4,11 @@ use crate::server_lib::OutputMsg;
 use crate::shared_lib::auxiliaries::error_chain_fmt;
 use crate::shared_lib::socket_handling::{RecvHandler, RecvHandlerError, WriteHandler};
 use anyhow::anyhow;
+use arti_client::{DataReader, DataWriter};
 use secrecy::SecretString;
 use std::fmt::{Debug, Display};
-use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::io::{BufReader, BufWriter};
-use tokio::net::tcp::{ReadHalf, WriteHalf};
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, mpsc};
 use tokio::time;
@@ -30,12 +29,12 @@ use super::handshaking::HandshakeError;
 ///
 /// - `id_tx`: sends message to `id_record`
 /// - `err`: eventual error that needs to be communicated
-/// - `addr`: address of the client that dropped
+/// - `nick`: TODO:
 /// - `output_tx`: channel to output on the server side
 async fn connection_dropped<T: Display>(
     id_tx: &mpsc::Sender<ConnHandlerIdRecordMsg>,
     err: Option<T>,
-    addr: SocketAddr,
+    nick: String,
     output_tx: &mpsc::Sender<OutputMsg>,
 ) -> Result<(), anyhow::Error> {
     match err {
@@ -43,7 +42,7 @@ async fn connection_dropped<T: Display>(
         None => {}
     }
     // update id_record
-    id_tx.send(ConnHandlerIdRecordMsg::ClientLeft(addr)).await?;
+    id_tx.send(ConnHandlerIdRecordMsg::ClientLeft(nick)).await?;
     Ok(())
 }
 
@@ -64,10 +63,9 @@ async fn connection_dropped<T: Display>(
 /// to receive commands from `id_record`
 /// TODO: comment
 pub async fn handshake_wrapper(
-    write_handler: &mut WriteHandler<BufWriter<WriteHalf<'_>>>,
-    read_handler: &mut RecvHandler<BufReader<ReadHalf<'_>>>,
+    write_handler: &mut WriteHandler<BufWriter<DataWriter>>, // TODO:
+    read_handler: &mut RecvHandler<BufReader<DataReader>>,   // TODO:
     id_tx: &mpsc::Sender<ConnHandlerIdRecordMsg>,
-    addr: &SocketAddr,
     output_tx: &mpsc::Sender<OutputMsg>,
     shared_secret: SecretString,
 ) -> Result<
@@ -81,7 +79,7 @@ pub async fn handshake_wrapper(
     // Handshake
     tokio::select! {
         // getting the nickname
-        res = handshake(write_handler, read_handler, addr.clone(), &id_tx, output_tx, shared_secret) => {
+        res = handshake(write_handler, read_handler, &id_tx, output_tx, shared_secret) => {
             return res;
         }
         // timer
@@ -105,7 +103,6 @@ pub async fn handshake_wrapper(
 /// - `bytes`: result from reading the line that arrives from the client from the tcp stream
 /// - `line`: string received and about to be send to the internal communication channel
 /// - `id_tx`: channel used to send messages to `id_record`
-/// - `addr`: address of the client
 /// - `id_hand_rx`: channel that receives messaged from `id_record`
 /// - `int_com_tx`: internal communication channel used to send
 /// - `nick`: nickname of the client
@@ -119,7 +116,6 @@ pub async fn read_branch(
     bytes: Result<(), RecvHandlerError>,
     line: &mut String,
     id_tx: &mpsc::Sender<ConnHandlerIdRecordMsg>,
-    addr: &SocketAddr,
     id_hand_rx: &mut mpsc::Receiver<IdRecordConnHandler>,
     int_com_tx: &broadcast::Sender<Message>,
     nick: &str,
@@ -128,7 +124,7 @@ pub async fn read_branch(
     let res;
     match bytes {
         Ok(n) => {
-            read_branch_n(line, id_tx, id_hand_rx, int_com_tx, addr, nick, &output_tx).await?;
+            read_branch_n(line, id_tx, id_hand_rx, int_com_tx, nick, &output_tx).await?;
             res = Ok(n);
         }
         Err(err) => {
@@ -136,7 +132,7 @@ pub async fn read_branch(
                 RecvHandlerError::ConnectionInterrupted => {
                     // connection has been closed by the client
                     let e: Option<RecvHandlerError> = None;
-                    connection_dropped(&id_tx, e, addr.clone(), &output_tx)
+                    connection_dropped(&id_tx, e, nick.into(), &output_tx)
                         .await
                         .map_err(|e| ReadBranchError::Fatal(e))?;
                     res = Err(ReadBranchError::NonFatal(err.into()));
@@ -144,13 +140,13 @@ pub async fn read_branch(
                 RecvHandlerError::MalformedPacket(_)
                 | RecvHandlerError::IoError(_)
                 | RecvHandlerError::EncryptionError(_) => {
-                    connection_dropped(&id_tx, Some(&err), addr.clone(), &output_tx)
+                    connection_dropped(&id_tx, Some(&err), nick.into(), &output_tx)
                         .await
                         .map_err(|e| ReadBranchError::Fatal(e))?;
                     res = Err(ReadBranchError::NonFatal(err.into()));
                 }
                 RecvHandlerError::HmacError(ref e) => {
-                    let _ = connection_dropped(&id_tx, Some(&err), addr.clone(), &output_tx).await;
+                    let _ = connection_dropped(&id_tx, Some(&err), nick.into(), &output_tx).await;
                     res = Err(ReadBranchError::Fatal(anyhow::anyhow!(
                         "This is a fatal error that shouldn't have happended:\n{}",
                         e
@@ -175,14 +171,12 @@ pub async fn read_branch(
 /// - `id_tx`: sends informations to `id_record`
 /// - `id_hand_rx`: receives informations from `id_record`
 /// - `int_com_tx`: sends `line` to `connection_handler`
-/// - `addr`: address of the client
 /// - `nick`: nickname of the client
 async fn read_branch_n(
     line: &str,
     id_tx: &mpsc::Sender<ConnHandlerIdRecordMsg>,
     id_hand_rx: &mut mpsc::Receiver<IdRecordConnHandler>,
     int_com_tx: &broadcast::Sender<Message>,
-    addr: &SocketAddr,
     nick: &str,
     output_tx: &mpsc::Sender<OutputMsg>,
 ) -> Result<(), ReadBranchError> {
@@ -190,7 +184,7 @@ async fn read_branch_n(
         Some(n) => {
             if n == '&' {
                 if line == LIST {
-                    let req = ConnHandlerIdRecordMsg::List(addr.clone());
+                    let req = ConnHandlerIdRecordMsg::List(nick.into());
                     match id_tx.send(req).await {
                         Ok(_) => {}
                         Err(e) => {
@@ -217,7 +211,7 @@ async fn read_branch_n(
                     };
                     let msg = Message::Personal {
                         content,
-                        address: addr.clone(),
+                        nickname: nick.into(),
                     };
                     match int_com_tx.send(msg) {
                         Ok(_) => {}
@@ -240,7 +234,7 @@ async fn read_branch_n(
                 // with the clinet
                 let msg = Message::Broadcast {
                     content: msg,
-                    address: addr.clone(),
+                    nickname: nick.into(),
                 };
                 match int_com_tx.send(msg) {
                     Ok(_) => {}
@@ -264,7 +258,6 @@ async fn read_branch_n(
 ///
 /// ## Parameters
 /// - `res`: `Option` returned from the internal communication channel
-/// - `addr`: address of the client
 /// - `nick`: nickname of the client
 /// - `write`: tcp connection used to send messages to the client
 /// - `id_tx`: channel used to send messages to `id_record`
@@ -277,19 +270,19 @@ async fn read_branch_n(
 )]
 pub async fn write_branch(
     res: Result<Message, RecvError>,
-    addr: &SocketAddr,
-    write_handler: &mut WriteHandler<BufWriter<WriteHalf<'_>>>,
+    nick: &str, // TODO: &str
+    write_handler: &mut WriteHandler<BufWriter<DataWriter>>,
     id_tx: &mpsc::Sender<ConnHandlerIdRecordMsg>,
     output_tx: mpsc::Sender<OutputMsg>,
 ) -> Result<(), WriteBranchError> {
     match res {
         Ok(msg) => match msg {
-            Message::Broadcast { content, address } => {
-                if address != *addr {
+            Message::Broadcast { content, nickname } => {
+                if &nickname != nick {
                     match write_handler.write_str(&content).await {
                         Ok(_) => return Ok(()),
                         Err(e) => {
-                            connection_dropped(id_tx, Some(&e), addr.clone(), &output_tx)
+                            connection_dropped(id_tx, Some(&e), nickname, &output_tx)
                                 .await
                                 .map_err(|e| WriteBranchError::Fatal(e))?;
                             return Err(WriteBranchError::NonFatal(e.into()));
@@ -297,12 +290,12 @@ pub async fn write_branch(
                     }
                 }
             }
-            Message::Personal { content, address } => {
-                if address == *addr {
+            Message::Personal { content, nickname } => {
+                if &nickname == nick {
                     match write_handler.write_str(&content).await {
                         Ok(_) => return Ok(()),
                         Err(e) => {
-                            connection_dropped(id_tx, Some(&e), addr.clone(), &output_tx)
+                            connection_dropped(id_tx, Some(&e), nickname, &output_tx)
                                 .await
                                 .map_err(|e| WriteBranchError::Fatal(e))?;
                             return Err(WriteBranchError::NonFatal(e.into()));
@@ -314,7 +307,7 @@ pub async fn write_branch(
         // `int_com_rx` and `int_com_tx` have dropped, so it means the future
         // `connection_handler` has returned, so this should not happen
         Err(err) => {
-            connection_dropped(&id_tx, Some(&err), addr.clone(), &output_tx)
+            connection_dropped(&id_tx, Some(&err), nick.into(), &output_tx)
                 .await
                 .map_err(|e| WriteBranchError::Fatal(e))?;
             return Err(WriteBranchError::NonFatal(err.into()));

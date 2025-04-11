@@ -30,3 +30,4 @@ hmac = { version = "0.12.1", features = ["std"]}
 hex = "0.4.3"
 futures = "0.3.31"
 tor-hsservice = "0.29.0"
+tor-cell = "0.29.0"

@@ -30,6 +30,7 @@ pub async fn launch_service(
         .launch_onion_service(svc_config)
         .map_err(|e| anyhow::anyhow!(e))?;
     if let Some(addr) = service.onion_address() {
+        // TODO: use display_output facility
         println!("Address: {}", addr);
     } else {
         return Err(anyhow::anyhow!(
@@ -37,9 +38,10 @@ pub async fn launch_service(
         ));
     }
 
-    // Wait until the service is believed to be fully reachable.
+    // Wait until the service is fully reachable.
     while let Some(status) = service.status_events().next().await {
         if status.state().is_fully_reachable() {
+            // TODO: use display_output facility
             println!("arti-chat server is fully reachable");
             break;
         }
