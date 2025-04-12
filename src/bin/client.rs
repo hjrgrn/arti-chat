@@ -15,7 +15,7 @@ pub async fn main() {
     // environment variable `ASYNC_CHAT_SECRET`
     let shared_secret = SecretString::from(env::var("ASYNC_CHAT_SECRET").expect("Failed to obtain the shared secret, write that into the environment variable \"ASYNC_CHAT_SECRET\""));
 
-    let sub = get_subscriber("TcpChatClient".into(), "warn".into(), std::io::stdout);
+    let sub = get_subscriber("ArtiChatClient".into(), "warn".into(), std::io::stdout);
     init_subscriber(sub);
     let settings = get_settings().expect("Failed to obtain settings.");
 

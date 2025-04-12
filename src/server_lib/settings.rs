@@ -3,16 +3,12 @@ use std::{env, error::Error};
 use config::Config;
 use serde::Deserialize;
 
+use crate::shared_lib::structs::TorSvc;
+
 #[derive(Deserialize, Debug)]
 pub struct Settings {
     tor_svc: TorSvc,
     max_connections: usize,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct TorSvc {
-    state_dir: String,
-    cache_dir: String,
 }
 
 impl Settings {
@@ -24,9 +20,6 @@ impl Settings {
     }
     pub fn get_max_connections(&self) -> usize {
         self.max_connections
-    }
-    pub fn get_full_address(&self) -> String {
-        String::from("Placeholder")
     }
 }
 

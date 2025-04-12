@@ -11,6 +11,7 @@ use crate::globals::EXIT_MSG;
 pub mod auxiliaries;
 pub mod graceful_shutdown;
 pub mod socket_handling;
+pub mod structs;
 
 /// # `display_output`
 ///
