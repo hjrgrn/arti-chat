@@ -28,6 +28,7 @@ mod globals;
 mod handshaking;
 mod sending_messages;
 pub mod settings;
+pub mod tor_facility;
 
 /// # `run`'s wrapper
 ///

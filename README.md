@@ -33,7 +33,9 @@ nvim config/ClientSettings.toml
 ```
 
 ```toml
+[client_settings]
 onion_address = "<svc>.onion"
+port = 80
 
 [tor_svc]
 state_dir = "./share/client_state_dir"

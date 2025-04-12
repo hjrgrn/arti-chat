@@ -7,8 +7,14 @@ use crate::shared_lib::structs::TorSvc;
 
 #[derive(Deserialize, Debug)]
 pub struct Settings {
-    onion_address: String, // TODO: obtain this from stdin
+    client_settings: ClientSettings, // TODO: obtain this from stdin
     tor_svc: TorSvc,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ClientSettings {
+    onion_address: String,
+    port: u16,
 }
 
 impl Settings {
@@ -18,11 +24,17 @@ impl Settings {
     pub fn cache_dir(&self) -> &str {
         &self.tor_svc.cache_dir
     }
-    pub fn get_onion_address(&self) -> &str {
-        &self.onion_address
+    pub fn get_full_onion_address(&self) -> String {
+        self.client_settings.get_full_onion_address()
     }
     pub fn get_full_address(&self) -> String {
         String::from("Placeholder") // TODO:
+    }
+}
+
+impl ClientSettings {
+    pub fn get_full_onion_address(&self) -> String {
+        format!("{}:{}", self.onion_address, self.port)
     }
 }
 
