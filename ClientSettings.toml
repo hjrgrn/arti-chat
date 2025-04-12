@@ -1,0 +1,5 @@
+onion_address = "mnyizjj7m3hpcr7i5afph3zt7maa65johyu2ruis6z7cmnjmaj3h6tad.onion"
+
+[tor_svc]
+state_dir = "./share/state_dir"
+cache_dir = "./share/cache_dir"

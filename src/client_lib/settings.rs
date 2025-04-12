@@ -22,7 +22,7 @@ impl Settings {
         &self.onion_address
     }
     pub fn get_full_address(&self) -> String {
-        String::from("Placeholder")
+        String::from("Placeholder") // TODO:
     }
 }
 
