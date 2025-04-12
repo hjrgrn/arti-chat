@@ -1,0 +1,5 @@
+max_connections = 5
+
+[tor_svc]
+state_dir = "./share/state_dir"
+cache_dir = "./share/cache_dir"

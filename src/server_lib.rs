@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use connection_handling::connection_handler_wrapper;
 use futures::Stream;
 use futures::StreamExt;
@@ -128,14 +126,6 @@ async fn run(
     let (int_com_tx, _) = broadcast::channel::<Message>(10);
     let id_msg_tx1 = int_com_tx.clone();
 
-    let addr: SocketAddr = match settings.get_full_address().parse() {
-        Ok(a) => a,
-        Err(e) => {
-            let _ = output_tx.send(OutputMsg::new_error(e.to_string())).await;
-            return Err(e.into());
-        }
-    };
-
     tokio::spawn(id_record(
         settings.get_max_connections(),
         run_id_com_rx,
@@ -197,10 +187,7 @@ async fn run(
                 ));
             }
             IdRecordRunMsg::IsThereSpace(false) => {
-                tracing::info!(
-                    "Connection refused from: {}\nBecouse there was no space left.",
-                    addr
-                );
+                tracing::info!("Connection refused Becouse there was no space left.",);
             }
         }
     }

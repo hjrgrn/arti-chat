@@ -1,7 +1,10 @@
-use std::env;
+use std::{env, process::exit};
 
 use lib::{
-    client_lib::{self, client_commands_wrapper, settings::get_settings, InputMsg},
+    client_lib::{
+        self, client_commands_wrapper, settings::get_settings,
+        tor_facility::build_tor_client_and_connect, InputMsg,
+    },
     shared_lib::{display_output, graceful_shutdown::handling_sigint, OutputMsg, StdinRequest},
     telemetry::{get_subscriber, init_subscriber},
 };
@@ -15,9 +18,14 @@ pub async fn main() {
     // environment variable `ASYNC_CHAT_SECRET`
     let shared_secret = SecretString::from(env::var("ASYNC_CHAT_SECRET").expect("Failed to obtain the shared secret, write that into the environment variable \"ASYNC_CHAT_SECRET\""));
 
-    let sub = get_subscriber("TcpChatClient".into(), "warn".into(), std::io::stdout);
+    let sub = get_subscriber("ArtiChatClient".into(), "warn".into(), std::io::stdout);
     init_subscriber(sub);
     let settings = get_settings().expect("Failed to obtain settings.");
+
+    let stream = build_tor_client_and_connect(&settings).await;
+    println!("{:?}", stream);
+
+    exit(19);
 
     // Cancellation token for graceful shutdown
     let ctoken = CancellationToken::new();
