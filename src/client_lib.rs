@@ -1,15 +1,12 @@
 use std::collections::VecDeque;
 
+use arti_client::{DataReader, DataStream, DataWriter};
 use globals::CLIENT_COM;
 use handshaking::handshake;
 use secrecy::SecretString;
 use sending_messages::handling_stdin_input_wrapper;
 use tokio::{
     io::{stdin, AsyncBufReadExt, BufReader, BufWriter},
-    net::{
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-        TcpStream,
-    },
     select,
     sync::mpsc,
 };
@@ -34,16 +31,17 @@ pub mod tor_facility;
 ///
 /// Allows graceful shutdown to be porformed
 pub async fn run_wrapper(
-    settings: Settings,
+    // settings: Settings, TODO:
     output_tx: mpsc::Sender<OutputMsg>,
     input_rx: mpsc::Receiver<InputMsg>,
     stdin_req_tx: mpsc::Sender<StdinRequest>,
     ctoken: CancellationToken,
     shared_secret: SecretString,
+    stream: DataStream,
 ) {
     tokio::select! {
         _ = ctoken.cancelled() => {}
-        res = run(settings, output_tx, input_rx, stdin_req_tx, ctoken.clone(), shared_secret) => {
+        res = run(output_tx, input_rx, stdin_req_tx, ctoken.clone(), shared_secret, stream) => {
                 match res {
                     Ok(_) => {}
                     Err(e) => {
@@ -70,26 +68,18 @@ pub async fn run_wrapper(
 /// shared_secret: Secret needed during authentication
 #[tracing::instrument(
     name = "Client main task is running",
-    skip(settings, output_tx, input_rx, stdin_req_tx, ctoken, shared_secret)
+    skip(output_tx, input_rx, stdin_req_tx, ctoken, shared_secret)
 )]
 async fn run(
-    settings: Settings,
+    // settings: Settings, TODO: instanciate stream here
     mut output_tx: mpsc::Sender<OutputMsg>,
     input_rx: mpsc::Receiver<InputMsg>,
     mut stdin_req_tx: mpsc::Sender<StdinRequest>,
     ctoken: CancellationToken,
     shared_secret: SecretString,
+    stream: DataStream,
 ) -> Result<(), anyhow::Error> {
-    let stream = match TcpStream::connect(settings.get_full_address()).await {
-        Ok(s) => s,
-        Err(e) => {
-            let err_msg = OutputMsg::new_error(&e);
-            let _ = output_tx.send(err_msg).await;
-            return Err(e.into());
-        }
-    };
-
-    let (read, write) = stream.into_split();
+    let (read, write) = stream.split();
     let reader = BufReader::new(read);
     let writer = BufWriter::new(write);
     let mut write_handler = WriteHandler::new(writer);
@@ -100,7 +90,7 @@ async fn run(
         &mut read_handler,
         &mut stdin_req_tx,
         &mut output_tx,
-        shared_secret
+        shared_secret,
     )
     .await
     {
@@ -126,7 +116,7 @@ async fn run(
 
 /// TODO: move this somewhere
 async fn recv_msg_wrapper(
-    mut read_handler: RecvHandler<BufReader<OwnedReadHalf>>,
+    mut read_handler: RecvHandler<BufReader<DataReader>>,
     output_tx: mpsc::Sender<OutputMsg>,
     ctoken: CancellationToken,
 ) {
@@ -156,7 +146,7 @@ async fn recv_msg_wrapper(
 /// TODO: comment
 #[tracing::instrument(name = "Receiving from server", skip(read_handler, output_tx))]
 async fn recv_msg(
-    read_handler: &mut RecvHandler<BufReader<OwnedReadHalf>>,
+    read_handler: &mut RecvHandler<BufReader<DataReader>>,
     output_tx: mpsc::Sender<OutputMsg>,
 ) -> Result<(), anyhow::Error> {
     let mut response = String::new();
@@ -364,7 +354,7 @@ impl InputMsg {
     /// - write_handler: handler that uses `writer`
     pub async fn action(
         &self,
-        write_handler: &mut WriteHandler<BufWriter<OwnedWriteHalf>>,
+        write_handler: &mut WriteHandler<BufWriter<DataWriter>>,
     ) -> Result<(), WriteHandlerError> {
         match self {
             InputMsg::Plain { payload } => {

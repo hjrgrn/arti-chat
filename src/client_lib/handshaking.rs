@@ -1,5 +1,6 @@
 use aes_gcm::{Aes256Gcm, KeyInit};
 use anyhow::Context;
+use arti_client::{DataReader, DataWriter};
 use hmac::{Hmac, Mac};
 use rand::{distributions::Alphanumeric, rngs::OsRng, Rng};
 use rsa::{pkcs1::DecodeRsaPublicKey, Pkcs1v15Encrypt, RsaPublicKey};
@@ -7,7 +8,6 @@ use secrecy::{ExposeSecret, SecretString};
 use sha2::Sha256;
 use tokio::{
     io::{BufReader, BufWriter},
-    net::tcp::{OwnedReadHalf, OwnedWriteHalf},
     sync::{mpsc, oneshot},
 };
 
@@ -22,8 +22,8 @@ use crate::{
 
 /// TODO: comment, custom error, error handling
 pub async fn handshake(
-    write_handler: &mut WriteHandler<BufWriter<OwnedWriteHalf>>,
-    read_handler: &mut RecvHandler<BufReader<OwnedReadHalf>>,
+    write_handler: &mut WriteHandler<BufWriter<DataWriter>>,
+    read_handler: &mut RecvHandler<BufReader<DataReader>>,
     stdin_req_tx: &mut mpsc::Sender<StdinRequest>,
     output_tx: &mut mpsc::Sender<OutputMsg>,
     shared_secret: SecretString,
@@ -150,8 +150,8 @@ async fn handles_response(
 }
 
 async fn key_exchange(
-    read_handler: &mut RecvHandler<BufReader<OwnedReadHalf>>,
-    write_handler: &mut WriteHandler<BufWriter<OwnedWriteHalf>>,
+    read_handler: &mut RecvHandler<BufReader<DataReader>>,
+    write_handler: &mut WriteHandler<BufWriter<DataWriter>>,
     shared_secret: SecretString,
 ) -> Result<(), anyhow::Error> {
     let mut hmac = <Hmac<Sha256> as Mac>::new_from_slice(shared_secret.expose_secret().as_bytes())?;
