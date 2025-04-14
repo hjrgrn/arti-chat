@@ -1,4 +1,4 @@
-use arti_client::{config::TorClientConfigBuilder, DataStream, TorAddr, TorClient};
+use arti_client::{config::TorClientConfigBuilder, DataStream, TorClient};
 
 use crate::client_lib::settings::Settings;
 

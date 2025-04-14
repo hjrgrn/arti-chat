@@ -22,10 +22,14 @@ pub async fn main() {
     init_subscriber(sub);
     let settings = get_settings().expect("Failed to obtain settings.");
 
-    let stream = build_tor_client_and_connect(&settings).await;
-    println!("{:?}", stream);
-
-    exit(19);
+    // TODO: refactor logic
+    let stream = match build_tor_client_and_connect(&settings).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Failed to connect to server:\n{}", e);
+            exit(1);
+        }
+    };
 
     // Cancellation token for graceful shutdown
     let ctoken = CancellationToken::new();
@@ -48,12 +52,12 @@ pub async fn main() {
     ));
 
     client_lib::run_wrapper(
-        settings,
         output_tx,
         input_rx,
         stdin_req_tx,
         ctoken,
         shared_secret,
+        stream
     )
     .await
 }
